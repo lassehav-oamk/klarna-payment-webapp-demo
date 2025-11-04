@@ -16,14 +16,14 @@ const OrderConfirmation = ({ orderData, onStartOver }) => {
   const fetchOrderDetails = async () => {
     try {
       setLoading(true);
-      console.log('🔍 Fetching order details...');
+      console.log('Fetching order details...');
 
       const response = await apiService.getOrder(orderData.order_id);
       setDetailedOrder(response.data);
 
-      console.log('✅ Order details fetched:', response.data);
+      console.log('Order details fetched:', response.data);
     } catch (err) {
-      console.error('❌ Failed to fetch order details:', err);
+      console.error('Failed to fetch order details:', err);
       setError('Failed to fetch order details');
       // Fallback to provided order data
       setDetailedOrder(orderData);
@@ -36,7 +36,7 @@ const OrderConfirmation = ({ orderData, onStartOver }) => {
     return (
       <div className="order-confirmation">
         <div className="error-state">
-          <h2>❌ No Order Found</h2>
+          <h2>No Order Found</h2>
           <p>Order data is missing.</p>
           <button onClick={onStartOver} className="start-over-button">
             Start Over
@@ -63,7 +63,6 @@ const OrderConfirmation = ({ orderData, onStartOver }) => {
       <div className="confirmation-container">
         {/* Success Header */}
         <div className="success-header">
-          <div className="success-icon">✅</div>
           <h1>Order Confirmed!</h1>
           <p>Thank you for your purchase. Your order has been successfully processed.</p>
         </div>
@@ -107,14 +106,29 @@ const OrderConfirmation = ({ orderData, onStartOver }) => {
             </div>
 
             {/* Product Information */}
-            {order.product && (
+            {(order.items || order.product) && (
               <div className="product-info">
-                <h3>Product</h3>
-                <div className="product-details">
-                  <h4>{order.product.name}</h4>
-                  <p>Quantity: {order.product.quantity}</p>
-                  <p>Unit Price: {formatPrice(order.product.unit_price, order.purchase_currency)}</p>
-                </div>
+                <h3>{order.items ? 'Products' : 'Product'}</h3>
+                {order.items ? (
+                  // Display multiple items
+                  <div className="products-list">
+                    {order.items.map((item, index) => (
+                      <div key={index} className="product-details">
+                        <h4>{item.name}</h4>
+                        <p>Quantity: {item.quantity}</p>
+                        <p>Unit Price: {formatPrice(item.unit_price, order.purchase_currency)}</p>
+                        <p>Total: {formatPrice(item.unit_price * item.quantity, order.purchase_currency)}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  // Fallback for old single product format
+                  <div className="product-details">
+                    <h4>{order.product.name}</h4>
+                    <p>Quantity: {order.product.quantity}</p>
+                    <p>Unit Price: {formatPrice(order.product.unit_price, order.purchase_currency)}</p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -234,10 +248,10 @@ const OrderConfirmation = ({ orderData, onStartOver }) => {
 
         {/* Demo Notice */}
         <div className="demo-notice">
-          <h3>📚 Demo Application Notice</h3>
+          <h3>Demo Application Notice</h3>
           <p>
-            This is an educational demonstration of Klarna payment integration.
-            No real payment was processed, and no actual products were purchased.
+            This is a demo of Klarna payment integration.
+            No real payments were processed, and no actual products were purchased.
             This application uses Klarna's Playground environment for safe testing and learning.
           </p>
         </div>

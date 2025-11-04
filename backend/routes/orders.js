@@ -1,6 +1,6 @@
 const express = require('express');
 const axios = require('axios');
-const { createKlarnaHeaders, demoProducts } = require('../server');
+const { createKlarnaHeaders, demoProducts } = require('../utils/shared');
 
 const router = express.Router();
 
@@ -10,12 +10,11 @@ const orders = new Map();
 // POST /api/create-order - Creates order after authorization
 router.post('/create-order', async (req, res) => {
   try {
-    console.log('🛒 Creating Klarna order...');
+    console.log('Creating Klarna order...');
 
     const {
       authorization_token,
-      productId = 'widget',
-      quantity = 1,
+      cart,
       customerInfo
     } = req.body;
 
@@ -23,42 +22,67 @@ router.post('/create-order', async (req, res) => {
       return res.status(400).json({ error: 'Authorization token is required' });
     }
 
-    // Get product details
-    const product = demoProducts[productId];
-    if (!product) {
-      return res.status(400).json({ error: 'Product not found' });
+    if (!cart || !Array.isArray(cart) || cart.length === 0) {
+      return res.status(400).json({ error: 'Cart is required and must be a non-empty array' });
     }
 
-    // Calculate totals (same logic as session creation)
-    const unitPrice = product.price;
-    const totalAmount = unitPrice * quantity;
-    const taxAmount = Math.round((totalAmount * product.tax_rate) / 10000);
-    const totalAmountWithTax = totalAmount + taxAmount;
+    // Build order lines and calculate totals (same logic as session creation)
+    const orderLines = [];
+    let totalOrderAmount = 0;
+    let totalTaxAmount = 0;
+    let currency = null;
+
+    for (const cartItem of cart) {
+      // Find product in demoProducts array
+      const product = demoProducts.find(p => p.productId === cartItem.productId);
+
+      if (!product) {
+        return res.status(400).json({ error: `Product with ID ${cartItem.productId} not found` });
+      }
+
+      // Ensure all products have the same currency
+      if (currency === null) {
+        currency = product.currency;
+      } else if (currency !== product.currency) {
+        return res.status(400).json({ error: 'All products must have the same currency' });
+      }
+
+      // Calculate amounts for this line item
+      const unitPrice = product.price;
+      const lineAmount = unitPrice * cartItem.quantity;
+      const lineTaxAmount = Math.round((lineAmount * product.tax_rate) / 10000);
+
+      totalOrderAmount += lineAmount;
+      totalTaxAmount += lineTaxAmount;
+
+      // Add to order lines
+      orderLines.push({
+        type: "physical",
+        reference: product.productId.toString(),
+        name: product.name,
+        quantity: cartItem.quantity,
+        unit_price: unitPrice,
+        tax_rate: product.tax_rate,
+        total_amount: lineAmount,
+        total_discount_amount: 0,
+        total_tax_amount: lineTaxAmount,
+        product_url: "https://example.com/product",
+        image_url: product.image_url
+      });
+    }
+
+    const totalAmountWithTax = totalOrderAmount + totalTaxAmount;
 
     // Prepare order data for Klarna
     const orderData = {
       purchase_country: "SE",
-      purchase_currency: product.currency,
+      purchase_currency: currency,
       locale: "en-SE",
       order_amount: totalAmountWithTax,
-      order_tax_amount: taxAmount,
-      order_lines: [
-        {
-          type: "physical",
-          reference: productId,
-          name: product.name,
-          quantity: quantity,
-          unit_price: unitPrice,
-          tax_rate: product.tax_rate,
-          total_amount: totalAmount,
-          total_discount_amount: 0,
-          total_tax_amount: taxAmount,
-          product_url: "https://example.com/product",
-          image_url: product.image_url
-        }
-      ],
+      order_tax_amount: totalTaxAmount,
+      order_lines: orderLines,
       merchant_reference1: `ORDER-${Date.now()}`, // Unique order reference
-      merchant_reference2: `DEMO-${productId}`,
+      merchant_reference2: `DEMO-CART`,
       // Add customer information if provided
       ...(customerInfo && {
         billing_address: {
@@ -73,7 +97,7 @@ router.post('/create-order', async (req, res) => {
       })
     };
 
-    console.log('📋 Order data prepared:', JSON.stringify(orderData, null, 2));
+    console.log(' Order data prepared:', JSON.stringify(orderData, null, 2));
 
     // Create order with Klarna
     const response = await axios.post(
@@ -82,8 +106,8 @@ router.post('/create-order', async (req, res) => {
       { headers: createKlarnaHeaders() }
     );
 
-    console.log('✅ Klarna order created successfully');
-    console.log('📄 Order ID:', response.data.order_id);
+    console.log('Klarna order created successfully');
+    console.log('Order ID:', response.data.order_id);
 
     // Store order in memory for demo purposes
     const orderRecord = {
@@ -91,12 +115,16 @@ router.post('/create-order', async (req, res) => {
       klarna_reference: response.data.klarna_reference,
       status: 'AUTHORIZED',
       order_amount: totalAmountWithTax,
-      purchase_currency: product.currency,
-      product: {
-        name: product.name,
-        quantity: quantity,
-        unit_price: unitPrice
-      },
+      purchase_currency: currency,
+      items: cart.map(item => {
+        const product = demoProducts.find(p => p.productId === item.productId);
+        return {
+          productId: item.productId,
+          name: product.name,
+          quantity: item.quantity,
+          unit_price: product.price
+        };
+      }),
       customer_info: customerInfo,
       created_at: new Date().toISOString(),
       redirect_url: response.data.redirect_url
@@ -111,14 +139,14 @@ router.post('/create-order', async (req, res) => {
       redirect_url: response.data.redirect_url,
       status: 'AUTHORIZED',
       order_amount: totalAmountWithTax,
-      purchase_currency: product.currency
+      purchase_currency: currency
     });
 
   } catch (error) {
-    console.error('❌ Error creating Klarna order:', error.message);
+    console.error('Error creating Klarna order:', error.message);
 
     if (error.response) {
-      console.error('📋 Klarna API response:', error.response.data);
+      console.error('Klarna API response:', error.response.data);
       res.status(error.response.status).json({
         error: 'Klarna API error',
         details: error.response.data,
@@ -137,7 +165,7 @@ router.post('/create-order', async (req, res) => {
 router.get('/order/:orderId', async (req, res) => {
   try {
     const { orderId } = req.params;
-    console.log(`🔍 Retrieving order details for: ${orderId}`);
+    console.log(`Retrieving order details for: ${orderId}`);
 
     // First check our local storage
     const localOrder = orders.get(orderId);
@@ -152,7 +180,7 @@ router.get('/order/:orderId', async (req, res) => {
         { headers: createKlarnaHeaders() }
       );
 
-      console.log('✅ Order retrieved from Klarna');
+      console.log('Order retrieved from Klarna');
 
       // Merge local data with Klarna data
       const orderDetails = {
@@ -167,13 +195,13 @@ router.get('/order/:orderId', async (req, res) => {
       res.json(orderDetails);
 
     } catch (klarnaError) {
-      console.warn('⚠️ Could not fetch order from Klarna, returning local data');
+      console.warn('Could not fetch order from Klarna, returning local data');
       // Return local order data if Klarna API fails
       res.json(localOrder);
     }
 
   } catch (error) {
-    console.error('❌ Error retrieving order:', error.message);
+    console.error('Error retrieving order:', error.message);
     res.status(500).json({
       error: 'Internal server error',
       message: 'Failed to retrieve order'
@@ -183,7 +211,7 @@ router.get('/order/:orderId', async (req, res) => {
 
 // GET /api/orders - Get all orders (for demo purposes)
 router.get('/orders', (req, res) => {
-  console.log('📋 Retrieving all orders');
+  console.log('Retrieving all orders');
   const allOrders = Array.from(orders.values()).sort((a, b) =>
     new Date(b.created_at) - new Date(a.created_at)
   );

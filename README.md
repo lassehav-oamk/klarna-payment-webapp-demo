@@ -22,19 +22,22 @@ klarna-demo/
 │   ├── routes/             # API route handlers
 │   │   ├── session.js      # Payment session creation
 │   │   └── orders.js       # Order management
+│   ├── utils/              # Shared utilities
+│   │   └── shared.js       # Shared config (products, headers)
 │   ├── package.json        # Backend dependencies
 │   └── .env.example        # Environment variables template
 ├── frontend/               # React application
 │   ├── src/
 │   │   ├── components/     # React components
 │   │   │   ├── ProductPage.jsx
+│   │   │   ├── Product.jsx
 │   │   │   ├── CheckoutPage.jsx
 │   │   │   └── OrderConfirmation.jsx
 │   │   ├── services/       # API service layer
 │   │   │   └── api.js
 │   │   ├── utils/          # Utility functions
 │   │   │   └── klarna.js   # Klarna SDK utilities
-│   │   ├── App.jsx         # Main app component
+│   │   ├── App.jsx         # Main app component (cart management)
 │   │   └── App.css         # Styling
 │   ├── package.json        # Frontend dependencies
 │   └── .env.example        # Environment variables template
@@ -116,12 +119,39 @@ npm run dev
 ### 5. Test the Demo
 
 1. Open http://localhost:3000 in your browser
-2. Add the demo product to cart
-3. Fill in the checkout form (pre-filled with test data)
-4. Complete the payment using Klarna's test environment
-5. View the order confirmation
+2. Browse and add multiple products to cart
+3. Proceed to checkout when ready
+4. Fill in the checkout form (pre-filled with test data)
+5. Complete the payment using Klarna's test environment
+6. View the order confirmation with all purchased items
 
 ## 🔧 Technical Implementation
+
+### Shopping Cart Features
+
+The application includes a fully functional shopping cart system:
+
+- **Multiple Products**: Users can add multiple products with different quantities
+- **Cart Management**: Cart state is managed in `App.jsx` using React state
+- **Real-time Updates**: Cart displays live updates as items are added
+- **Checkout Integration**: Full cart is sent to Klarna for payment processing
+- **Order Lines**: Each cart item becomes a separate order line in Klarna
+
+**Cart Structure:**
+```javascript
+// Cart is an array of items
+cart = [
+  {
+    productId: 12345,
+    name: "Boots",
+    price: 2500,
+    currency: "EUR",
+    tax_rate: 2500,
+    quantity: 1
+  },
+  // ... more items
+]
+```
 
 ### Payment Flow Explained
 
@@ -221,8 +251,9 @@ You can modify this data to test different scenarios.
    - Observe how the widget changes
 
 2. **Add Products**:
-   - Extend the product catalog in `backend/server.js`
-   - Add product selection to the frontend
+   - Extend the product catalog in `backend/utils/shared.js`
+   - Products are stored as an array with productId, name, price, etc.
+   - New products will automatically appear on the ProductPage
 
 3. **Enhance Validation**:
    - Add more customer validation rules
@@ -276,23 +307,53 @@ Get available demo products.
 **Response:**
 ```json
 {
-  "widget": {
-    "name": "Demo Widget",
-    "price": 2500,
-    "currency": "EUR",
-    "description": "A sample product for payment demonstration"
-  }
+  "products": [
+    {
+      "productId": 12345,
+      "name": "Boots",
+      "description": "These boots are made for walking",
+      "price": 2500,
+      "currency": "EUR",
+      "tax_rate": 2500,
+      "image_url": "https://placehold.co/400x400?text=Boots"
+    },
+    {
+      "productId": 12346,
+      "name": "Banana",
+      "description": "Yellow banana, rich in potassium",
+      "price": 80,
+      "currency": "EUR",
+      "tax_rate": 2500,
+      "image_url": "https://placehold.co/400x400?text=Banana"
+    }
+  ]
 }
 ```
 
 #### `POST /api/create-session`
-Create a Klarna payment session.
+Create a Klarna payment session for cart items.
 
 **Request:**
 ```json
 {
-  "productId": "widget",
-  "quantity": 1,
+  "cart": [
+    {
+      "productId": 12345,
+      "name": "Boots",
+      "price": 2500,
+      "currency": "EUR",
+      "tax_rate": 2500,
+      "quantity": 1
+    },
+    {
+      "productId": 12346,
+      "name": "Banana",
+      "price": 80,
+      "currency": "EUR",
+      "tax_rate": 2500,
+      "quantity": 2
+    }
+  ],
   "customerInfo": {
     "firstName": "John",
     "lastName": "Doe",
@@ -306,20 +367,29 @@ Create a Klarna payment session.
 {
   "session_id": "klarna-session-id",
   "client_token": "klarna-client-token",
-  "order_amount": 3125,
-  "order_tax_amount": 625
+  "order_amount": 3325,
+  "order_tax_amount": 665,
+  "purchase_currency": "EUR"
 }
 ```
 
 #### `POST /api/create-order`
-Create order after payment authorization.
+Create order after payment authorization for cart items.
 
 **Request:**
 ```json
 {
   "authorization_token": "auth-token-from-klarna",
-  "productId": "widget",
-  "quantity": 1,
+  "cart": [
+    {
+      "productId": 12345,
+      "name": "Boots",
+      "price": 2500,
+      "currency": "EUR",
+      "tax_rate": 2500,
+      "quantity": 1
+    }
+  ],
   "customerInfo": { ... }
 }
 ```
@@ -330,7 +400,8 @@ Create order after payment authorization.
   "order_id": "klarna-order-id",
   "klarna_reference": "klarna-ref-123",
   "status": "AUTHORIZED",
-  "order_amount": 3125
+  "order_amount": 3125,
+  "purchase_currency": "EUR"
 }
 ```
 
@@ -343,8 +414,16 @@ Get order details by ID.
   "order_id": "klarna-order-id",
   "status": "AUTHORIZED",
   "order_amount": 3125,
+  "purchase_currency": "EUR",
   "created_at": "2023-12-07T10:30:00.000Z",
-  "product": { ... },
+  "items": [
+    {
+      "productId": 12345,
+      "name": "Boots",
+      "quantity": 1,
+      "unit_price": 2500
+    }
+  ],
   "customer_info": { ... }
 }
 ```

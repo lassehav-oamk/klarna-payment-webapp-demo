@@ -1,65 +1,79 @@
 const express = require('express');
 const axios = require('axios');
-const { createKlarnaHeaders, demoProducts } = require('../server');
+const { createKlarnaHeaders, demoProducts } = require('../utils/shared');
 
 const router = express.Router();
 
 // POST /api/create-session - Creates Klarna payment session
 router.post('/create-session', async (req, res) => {
   try {
-    console.log('🔄 Creating Klarna payment session...');
+    console.log('Creating Klarna payment session...');
 
-    const { productId = 'widget', quantity = 1, customerInfo } = req.body;
+    const { cart, customerInfo } = req.body;
 
-    // Get product details
-    const product = demoProducts[productId];
-    if (!product) {
-      return res.status(400).json({ error: 'Product not found' });
+    if (!cart || !Array.isArray(cart) || cart.length === 0) {
+      return res.status(400).json({ error: 'Cart is required and must be a non-empty array' });
     }
 
-    // Calculate totals
-    const unitPrice = product.price;
-    const totalAmount = unitPrice * quantity;
-    const taxAmount = Math.round((totalAmount * product.tax_rate) / 10000);
-    const totalAmountWithTax = totalAmount + taxAmount;
+    // Build order lines and calculate totals
+    const orderLines = [];
+    let totalOrderAmount = 0;
+    let totalTaxAmount = 0;
+    let currency = null;
+
+    for (const cartItem of cart) {
+      // Find product in demoProducts array
+      const product = demoProducts.find(p => p.productId === cartItem.productId);
+
+      if (!product) {
+        return res.status(400).json({ error: `Product with ID ${cartItem.productId} not found` });
+      }
+
+      // Ensure all products have the same currency
+      if (currency === null) {
+        currency = product.currency;
+      } else if (currency !== product.currency) {
+        return res.status(400).json({ error: 'All products must have the same currency' });
+      }
+
+      // Calculate amounts for this line item
+      const unitPrice = product.price;
+      const lineAmount = unitPrice * cartItem.quantity;
+      const lineTaxAmount = Math.round((lineAmount * product.tax_rate) / 10000);
+
+      totalOrderAmount += lineAmount;
+      totalTaxAmount += lineTaxAmount;
+
+      // Add to order lines
+      orderLines.push({
+        type: "physical",
+        reference: product.productId.toString(),
+        name: product.name,
+        quantity: cartItem.quantity,
+        unit_price: unitPrice,
+        tax_rate: product.tax_rate,
+        total_amount: lineAmount,
+        total_discount_amount: 0,
+        total_tax_amount: lineTaxAmount,
+        product_url: "https://example.com/product",
+        image_url: product.image_url
+      });
+    }
+
+    const totalAmountWithTax = totalOrderAmount + totalTaxAmount;
 
     // Prepare session data for Klarna
     const sessionData = {
-      purchase_country: "SE", // Sweden for demo
-      purchase_currency: product.currency,
-      locale: "en-SE",
+      intent: "buy",
+      purchase_country: "FI", // Finland for demo
+      purchase_currency: "EUR",
+      locale: "fi-FI",
       order_amount: totalAmountWithTax,
-      order_tax_amount: taxAmount,
-      order_lines: [
-        {
-          type: "physical",
-          reference: productId,
-          name: product.name,
-          quantity: quantity,
-          unit_price: unitPrice,
-          tax_rate: product.tax_rate,
-          total_amount: totalAmount,
-          total_discount_amount: 0,
-          total_tax_amount: taxAmount,
-          product_url: "https://example.com/product",
-          image_url: product.image_url
-        }
-      ],
-      // Optional: Add customer information if provided
-      ...(customerInfo && {
-        billing_address: {
-          given_name: customerInfo.firstName,
-          family_name: customerInfo.lastName,
-          email: customerInfo.email,
-          street_address: customerInfo.address,
-          postal_code: customerInfo.postalCode,
-          city: customerInfo.city,
-          country: customerInfo.country || "SE"
-        }
-      })
+      order_tax_amount: totalTaxAmount,
+      order_lines: orderLines,      
     };
 
-    console.log('📋 Session data prepared:', JSON.stringify(sessionData, null, 2));
+    console.log('Session data prepared:', JSON.stringify(sessionData, null, 2));
 
     // Make request to Klarna API
     const response = await axios.post(
@@ -68,8 +82,8 @@ router.post('/create-session', async (req, res) => {
       { headers: createKlarnaHeaders() }
     );
 
-    console.log('✅ Klarna session created successfully');
-    console.log('📄 Session ID:', response.data.session_id);
+    console.log('Klarna session created successfully');
+    console.log('Session ID:', response.data.session_id);
 
     // Return session data to frontend
     res.json({
@@ -77,15 +91,15 @@ router.post('/create-session', async (req, res) => {
       client_token: response.data.client_token,
       payment_method_categories: response.data.payment_method_categories,
       order_amount: totalAmountWithTax,
-      order_tax_amount: taxAmount,
-      purchase_currency: product.currency
+      order_tax_amount: totalTaxAmount,
+      purchase_currency: currency
     });
 
   } catch (error) {
-    console.error('❌ Error creating Klarna session:', error.message);
+    console.error('Error creating Klarna session:', error.message);
 
     if (error.response) {
-      console.error('📋 Klarna API response:', error.response.data);
+      console.error('Klarna API response:', error.response.data);
       res.status(error.response.status).json({
         error: 'Klarna API error',
         details: error.response.data,

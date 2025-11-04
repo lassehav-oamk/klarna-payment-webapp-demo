@@ -22,9 +22,9 @@ const CheckoutPage = ({ cart, onOrderComplete, onBack }) => {
     lastName: 'Doe',
     email: 'john.doe@example.com',
     address: '123 Demo Street',
-    city: 'Stockholm',
+    city: 'Helsinki',
     postalCode: '12345',
-    country: 'SE'
+    country: 'FI'
   });
 
   const [validationErrors, setValidationErrors] = useState({});
@@ -39,32 +39,29 @@ const CheckoutPage = ({ cart, onOrderComplete, onBack }) => {
     try {
       setLoading(true);
       setError(null);
-      console.log('🔄 Initializing payment session...');
+      console.log('Initializing payment session...');
 
-      const cartItem = cart[0]; // For demo, we're handling single item
-
-      // Create session with backend
+      // Create session with backend - send full cart
       const sessionResponse = await apiService.createSession({
-        productId: cartItem.productId,
-        quantity: cartItem.quantity,
+        cart: cart,
         customerInfo: customerInfo
       });
 
-      console.log('✅ Session created:', sessionResponse.data);
+      console.log('Session created:', sessionResponse.data);
       setSessionData(sessionResponse.data);
 
       // Initialize Klarna Payments
-      const payments = await initializeKlarnaPayments(sessionResponse.data.client_token);
-      setPaymentsInstance(payments);
+      const KlarnaPaymentsInstance = await initializeKlarnaPayments(sessionResponse.data.client_token);
+      setPaymentsInstance(KlarnaPaymentsInstance);
 
       // Load payment method
-      await loadPaymentMethod(payments, 'klarna-payments-container', 'pay_later');
+      await loadPaymentMethod(KlarnaPaymentsInstance, 'klarna-payments-container', 'pay_now');
       setPaymentMethodLoaded(true);
 
-      console.log('✅ Klarna payment widget loaded');
+      console.log('Klarna payment widget loaded');
 
     } catch (err) {
-      console.error('❌ Failed to initialize payment session:', err);
+      console.error('Failed to initialize payment session:', err);
       setError(`Failed to initialize payment: ${err.message}`);
     } finally {
       setLoading(false);
@@ -112,7 +109,7 @@ const CheckoutPage = ({ cart, onOrderComplete, onBack }) => {
       setProcessingPayment(true);
       setError(null);
 
-      console.log('🔄 Processing payment...');
+      console.log('Processing payment...');
 
       // Validate form
       if (!validateForm()) {
@@ -140,24 +137,22 @@ const CheckoutPage = ({ cart, onOrderComplete, onBack }) => {
       // Authorize payment with Klarna
       const authResult = await authorizePayment(paymentsInstance, 'pay_later', paymentData);
 
-      console.log('✅ Payment authorized:', authResult);
+      console.log('Payment authorized:', authResult);
 
-      // Create order with backend
-      const cartItem = cart[0];
+      // Create order with backend - send full cart
       const orderResponse = await apiService.createOrder({
         authorization_token: authResult.authorization_token,
-        productId: cartItem.productId,
-        quantity: cartItem.quantity,
+        cart: cart,
         customerInfo: customerInfo
       });
 
-      console.log('✅ Order created:', orderResponse.data);
+      console.log('Order created:', orderResponse.data);
 
       // Complete the flow
       onOrderComplete(orderResponse.data);
 
     } catch (err) {
-      console.error('❌ Payment processing failed:', err);
+      console.error('Payment processing failed:', err);
       setError(`Payment failed: ${err.message}`);
     } finally {
       setProcessingPayment(false);
@@ -177,10 +172,11 @@ const CheckoutPage = ({ cart, onOrderComplete, onBack }) => {
     );
   }
 
-  const cartItem = cart[0];
-  const subtotal = cartItem.price * cartItem.quantity;
+  // Calculate subtotal from all cart items
+  const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const taxAmount = sessionData ? sessionData.order_tax_amount : 0;
   const total = sessionData ? sessionData.order_amount : subtotal;
+  const currency = cart[0]?.currency || 'EUR';
 
   return (
     <div className="checkout-page">
@@ -196,29 +192,31 @@ const CheckoutPage = ({ cart, onOrderComplete, onBack }) => {
           {/* Order Summary */}
           <div className="order-summary">
             <h3>Order Summary</h3>
-            <div className="cart-item">
-              <div className="item-details">
-                <h4>{cartItem.name}</h4>
-                <p>Quantity: {cartItem.quantity}</p>
-                <p>Unit Price: {formatPrice(cartItem.price, cartItem.currency)}</p>
+            {cart.map((item, index) => (
+              <div key={index} className="cart-item">
+                <div className="item-details">
+                  <h4>{item.name}</h4>
+                  <p>Quantity: {item.quantity}</p>
+                  <p>Unit Price: {formatPrice(item.price, item.currency)}</p>
+                </div>
+                <div className="item-total">
+                  {formatPrice(item.price * item.quantity, item.currency)}
+                </div>
               </div>
-              <div className="item-total">
-                {formatPrice(subtotal, cartItem.currency)}
-              </div>
-            </div>
+            ))}
 
             <div className="order-totals">
               <div className="total-line">
                 <span>Subtotal:</span>
-                <span>{formatPrice(subtotal, cartItem.currency)}</span>
+                <span>{formatPrice(subtotal, currency)}</span>
               </div>
               <div className="total-line">
                 <span>Tax:</span>
-                <span>{formatPrice(taxAmount, cartItem.currency)}</span>
+                <span>{formatPrice(taxAmount, currency)}</span>
               </div>
               <div className="total-line total">
                 <span><strong>Total:</strong></span>
-                <span><strong>{formatPrice(total, cartItem.currency)}</strong></span>
+                <span><strong>{formatPrice(total, currency)}</strong></span>
               </div>
             </div>
           </div>
@@ -325,7 +323,7 @@ const CheckoutPage = ({ cart, onOrderComplete, onBack }) => {
 
             {error && (
               <div className="payment-error">
-                <p>❌ {error}</p>
+                <p>Error: {error}</p>
                 <button onClick={initializePaymentSession} className="retry-button">
                   Retry
                 </button>
@@ -351,7 +349,7 @@ const CheckoutPage = ({ cart, onOrderComplete, onBack }) => {
                       Processing Payment...
                     </>
                   ) : (
-                    `🔒 Place Order - ${formatPrice(total, cartItem.currency)}`
+                    `Place Order - ${formatPrice(total, currency)}`
                   )}
                 </button>
               </div>

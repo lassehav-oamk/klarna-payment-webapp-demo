@@ -61,7 +61,8 @@ body {
 }
 
 .step.active {
-  background: rgba(255, 255, 255, 0.3);
+  background: rgb(247 255 0);
+  color: black;
   transform: scale(1.05);
 }
 
@@ -100,6 +101,11 @@ body {
   padding: 2rem;
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
   margin-bottom: 2rem;
+}
+
+.product-container:hover {
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+  background-color: rgb(253, 255, 207);
 }
 
 .product-image img {
@@ -718,4 +724,28 @@ body {
   .checkout-content {
     padding: 1rem;
   }
+}
+
+.cart-overview {
+  margin: 30px;
+  background-color: rgb(253, 255, 207);
+  padding: 20px;
+  border-radius: 8px;
+}
+
+.checkout-button {
+  width: 100%;
+  background: #28a745;
+  color: white;
+  border: none;
+  padding: 10px;
+  font-size: 20px;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;  
+}
+
+.checkout-button:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
 }

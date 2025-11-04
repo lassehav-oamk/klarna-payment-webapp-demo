@@ -9,32 +9,36 @@ const api = axios.create({
   },
 });
 
-// Request interceptor for logging
+// Request interceptor for logging.
+// This interceptor is executed before every request is sent.
+// This is useful for debugging and monitoring API calls and also completely optional.
 api.interceptors.request.use(
   (config) => {
-    console.log(`🚀 API Request: ${config.method?.toUpperCase()} ${config.url}`);
+    console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
     if (config.data) {
-      console.log('📋 Request data:', config.data);
+      console.log('Request data:', config.data);
     }
     return config;
   },
   (error) => {
-    console.error('❌ Request error:', error);
+    console.error('Request error:', error);
     return Promise.reject(error);
   }
 );
 
 // Response interceptor for logging
+// This interceptor is executed before every response is received.
+// This is useful for debugging and monitoring API calls and also completely optional.
 api.interceptors.response.use(
   (response) => {
-    console.log(`✅ API Response: ${response.status} ${response.config.url}`);
-    console.log('📄 Response data:', response.data);
+    console.log(`API Response: ${response.status} ${response.config.url}`);
+    console.log('Response data:', response.data);
     return response;
   },
   (error) => {
-    console.error(`❌ API Error: ${error.response?.status} ${error.config?.url}`);
+    console.error(`API Error: ${error.response?.status} ${error.config?.url}`);
     if (error.response?.data) {
-      console.error('📄 Error details:', error.response.data);
+      console.error('Error details:', error.response.data);
     }
     return Promise.reject(error);
   }
@@ -46,7 +50,10 @@ export const apiService = {
   healthCheck: () => api.get('/health'),
 
   // Get demo products
-  getProducts: () => api.get('/products'),
+  getProducts: async () => {
+    const response = await api.get('/products');
+    return response.data.products;
+  },
 
   // Create Klarna payment session
   createSession: (sessionData) => api.post('/create-session', sessionData),
